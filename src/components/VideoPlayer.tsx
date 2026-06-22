@@ -16,12 +16,53 @@ export default function VideoPlayer({ url, channelName, lang, channelId, groupTi
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true); // default to muted for autoplay friendliness
-  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false); // default to unmuted (sound on) as requested
+  const [volume, setVolume] = useState(1.0); // default to full volume (1.0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isHttpWarning, setIsHttpWarning] = useState(false);
   const [stats, setStats] = useState({ resolution: 'Unknown', speed: '0 kbps' });
+  const [showControls, setShowControls] = useState(true);
+
+  // Auto-hide controls after 3.5 seconds of inactivity when playing
+  useEffect(() => {
+    if (!showControls || !isPlaying) return;
+    const hideTimeout = setTimeout(() => {
+      setShowControls(false);
+    }, 3500);
+    return () => clearTimeout(hideTimeout);
+  }, [showControls, isPlaying]);
+
+  const handleMouseMove = () => {
+    setShowControls(true);
+  };
+
+  const handlePlayerClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't toggle controls if clicking on interactive buttons, links, search elements, or within controls bar
+    if (
+      target.closest('.player-controls-bar') ||
+      target.closest('button') ||
+      target.closest('a') ||
+      target.closest('input')
+    ) {
+      return;
+    }
+    setShowControls((prev) => !prev);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('.player-controls-bar') ||
+      target.closest('button') ||
+      target.closest('a') ||
+      target.closest('input')
+    ) {
+      return;
+    }
+    togglePlay();
+  };
 
   // Reset states on URL change
   useEffect(() => {
@@ -60,6 +101,8 @@ export default function VideoPlayer({ url, channelName, lang, channelId, groupTi
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsLoading(false);
+        video.volume = volume;
+        video.muted = isMuted;
         video.play()
           .then(() => setIsPlaying(true))
           .catch((e) => {
@@ -113,6 +156,8 @@ export default function VideoPlayer({ url, channelName, lang, channelId, groupTi
       video.src = url;
       video.addEventListener('loadedmetadata', () => {
         setIsLoading(false);
+        video.volume = volume;
+        video.muted = isMuted;
         video.play()
           .then(() => setIsPlaying(true))
           .catch(() => setIsPlaying(false));
@@ -198,14 +243,18 @@ export default function VideoPlayer({ url, channelName, lang, channelId, groupTi
   };
 
   return (
-    <div className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden border border-neutral-800 shadow-2xl">
+    <div 
+      className="relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden border border-neutral-800 shadow-2xl group select-none cursor-pointer"
+      onMouseMove={handleMouseMove}
+      onClick={handlePlayerClick}
+      onDoubleClick={handleDoubleClick}
+    >
       {/* Actual HTML5 Video Element */}
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain pointer-events-none"
         playsInline
         muted={isMuted}
-        onClick={togglePlay}
       />
 
       {/* Realtime Live Watching overlay badge */}
@@ -306,8 +355,12 @@ export default function VideoPlayer({ url, channelName, lang, channelId, groupTi
         </div>
       )}
 
-      {/* Control Bar Overlay on hover */}
-      <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/80 to-transparent opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-between z-10 gap-4">
+      {/* Control Bar Overlay */}
+      <div className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/80 to-transparent transition-opacity duration-300 flex items-center justify-between z-10 gap-4 player-controls-bar ${
+        showControls 
+          ? 'opacity-100 pointer-events-auto' 
+          : 'opacity-0 pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto'
+      }`}>
         <div className="flex items-center gap-3">
           <button
             onClick={togglePlay}

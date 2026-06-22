@@ -2,14 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Volume2, VolumeX, Play, Pause, Maximize, RotateCcw, AlertTriangle, ExternalLink, HelpCircle, ShieldAlert } from 'lucide-react';
 import { Language } from '../types';
+import LiveViewerCount from './LiveViewerCount';
 
 interface VideoPlayerProps {
   url: string;
   channelName: string;
   lang: Language;
+  channelId?: string;
+  groupTitle?: string;
 }
 
-export default function VideoPlayer({ url, channelName, lang }: VideoPlayerProps) {
+export default function VideoPlayer({ url, channelName, lang, channelId, groupTitle }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -204,6 +207,19 @@ export default function VideoPlayer({ url, channelName, lang }: VideoPlayerProps
         muted={isMuted}
         onClick={togglePlay}
       />
+
+      {/* Realtime Live Watching overlay badge */}
+      {!isLoading && !errorMsg && (
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-black/75 backdrop-blur px-2.5 py-1.5 rounded-full text-xs font-bold text-white border border-white/15 shadow-xl select-none">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block"></span>
+          <LiveViewerCount
+            channelId={channelId || 'default'}
+            groupTitle={groupTitle || 'Sports'}
+            lang={lang}
+            className="text-[10.5px] text-slate-100 text-shadow-sm"
+          />
+        </div>
+      )}
 
       {/* Loading overlay */}
       {isLoading && (

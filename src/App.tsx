@@ -26,6 +26,8 @@ import {
 import { DEFAULT_CHANNELS, WORLD_CUP_FIXTURES } from './channels';
 import { Channel, MatchFixture, Language } from './types';
 import VideoPlayer from './components/VideoPlayer';
+import LiveViewerCount from './components/LiveViewerCount';
+import ActiveViewersList from './components/ActiveViewersList';
 
 export default function App() {
   const [lang, setLang] = useState<Language>('bn');
@@ -389,6 +391,8 @@ export default function App() {
                 url={activeChannel.url}
                 channelName={activeChannel.name}
                 lang={lang}
+                channelId={activeChannel.id}
+                groupTitle={activeChannel.groupTitle}
               />
               
               {/* Media details frame */}
@@ -414,9 +418,21 @@ export default function App() {
                         </span>
                       )}
                     </h2>
-                    <p className="text-xs text-slate-400 truncate max-w-xs sm:max-w-md font-mono">
-                      {activeChannel.url}
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 mt-1">
+                      <p className="text-xs text-slate-400 truncate max-w-xs sm:max-w-md font-mono">
+                        {activeChannel.url}
+                      </p>
+                      <span className="text-slate-700 text-xs hidden sm:inline">|</span>
+                      <div className="flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 w-fit shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                        <LiveViewerCount
+                          channelId={activeChannel.id}
+                          groupTitle={activeChannel.groupTitle}
+                          lang={lang}
+                          className="text-[10px] sm:text-[11px] text-[#ef4444]"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -566,7 +582,7 @@ export default function App() {
                               className="max-h-full max-w-full object-contain"
                             />
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 text-left">
                             <p className="text-xs font-bold truncate">{ch.name}</p>
                             <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
                               {ch.groupTitle}
@@ -938,14 +954,12 @@ export default function App() {
                       </div>
 
                       {/* Content details description */}
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-xs font-bold truncate pr-6">{chan.name}</h4>
+                      <div className="flex-1 min-w-0 text-left">
+                        <h4 className="text-xs font-bold truncate pr-6 text-slate-100">{chan.name}</h4>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="text-[9px] text-slate-400 truncate block font-sans">
                             {chan.groupTitle}
                           </span>
-                          
-                          {/* Online badge */}
                           <span className="w-1 h-1 rounded-full bg-amber-400 inline-block"></span>
                           <span className="text-[8px] text-amber-400 font-bold uppercase tracking-wider">
                             {lang === 'bn' ? 'চলমান' : 'ONLINE'}
@@ -985,7 +999,7 @@ export default function App() {
                 }}
                 className="text-slate-500 hover:text-white flex items-center gap-1 cursor-pointer transition"
               >
-                <RefreshCw className="w-3 h-3" />
+                <RefreshCw className="w-3" />
                 {lang === 'bn' ? 'ডিফল্ট রিস্টোর' : 'Restore Defaults'}
               </button>
               
@@ -995,6 +1009,9 @@ export default function App() {
             </div>
 
           </div>
+
+          {/* Real-time Watchers Hub (tv-rkb.vercel.app) */}
+          <ActiveViewersList lang={lang} />
 
         </div>
 
@@ -1020,7 +1037,7 @@ export default function App() {
               {lang === 'bn' ? 'গতি অপ্টিমাইজড' : 'Latency Optimized'}
             </span>
             <span className="text-white/10">|</span>
-            <span className="text-slate-600 font-mono">© 2026 IPTV Streamer</span>
+            <span className="text-slate-600 font-mono">© ANE(RKB),DoICT</span>
           </div>
         </div>
       </footer>

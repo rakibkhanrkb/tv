@@ -1,0 +1,6 @@
+{
+  "name": "World Cup 2026 IPTV Player",
+  "description": "লাইভ বিশ্বকাপ ফুটবল ২০২৬ আইপিটিভি প্লেয়ার - Live FIFA World Cup 2026 Streaming Player in Bengali & English",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

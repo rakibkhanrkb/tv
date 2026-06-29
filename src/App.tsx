@@ -53,6 +53,22 @@ export default function App() {
   // Dynamic status feedback
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // Deleted channels list
+  const [deletedChannelIds, setDeletedChannelIds] = useState<string[]>(() => {
+    const local = localStorage.getItem('fwc_iptv_deleted_channel_ids');
+    return local ? JSON.parse(local) : [];
+  });
+
+  // Admin states
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('fwc_iptv_admin_logged_in') === 'true';
+  });
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   // Match tracker fake score states (keeps UI highly alive!)
   const [matchScores, setMatchScores] = useState<Record<string, { home: number; away: number; minutes: number; live: boolean }>>({
     m1: { home: 2, away: 1, minutes: 78, live: true },
@@ -76,11 +92,18 @@ export default function App() {
     const combined = [...DEFAULT_CHANNELS, ...customList];
     setChannels(combined);
 
-    // Default active is beIN Sports 5 or first available
-    if (combined.length > 0) {
-      setActiveChannel(combined[0]);
+    const visible = combined.filter(c => !deletedChannelIds.includes(c.id));
+    if (visible.length > 0) {
+      setActiveChannel(prev => {
+        if (prev && visible.some(v => v.id === prev.id)) {
+          return prev;
+        }
+        return visible[0];
+      });
+    } else {
+      setActiveChannel(null);
     }
-  }, [lang]);
+  }, [lang, deletedChannelIds]);
 
   // Handle ticking watch
   useEffect(() => {
@@ -122,6 +145,9 @@ export default function App() {
   // Filter channels based on search and active tab categorizations
   const filteredChannels = useMemo(() => {
     return channels.filter((ch) => {
+      // Skip deleted ones
+      if (deletedChannelIds.includes(ch.id)) return false;
+
       // Filter by dynamic query
       const matchesSearch = ch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             ch.groupTitle.toLowerCase().includes(searchQuery.toLowerCase());
@@ -134,7 +160,7 @@ export default function App() {
       }
       return matchesSearch;
     });
-  }, [channels, searchQuery, activeTab]);
+  }, [channels, searchQuery, activeTab, deletedChannelIds]);
 
   // Save new single custom channel
   const handleAddCustomChannel = (e: React.FormEvent) => {
@@ -173,19 +199,59 @@ export default function App() {
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  // Remove custom channel
+  // Perform actual deletion
+  const executeDelete = (id: string) => {
+    const nextDeleted = [...deletedChannelIds, id];
+    setDeletedChannelIds(nextDeleted);
+    localStorage.setItem('fwc_iptv_deleted_channel_ids', JSON.stringify(nextDeleted));
+
+    // Also remove from custom channels list in localStorage if it was custom
+    const onlyCustom = channels.filter(c => c.isCustom && c.id !== id && !nextDeleted.includes(c.id));
+    localStorage.setItem('fwc_iptv_custom_channels', JSON.stringify(onlyCustom));
+
+    // Set new active channel if deleted was active
+    if (activeChannel?.id === id) {
+      const remaining = channels.filter(c => !nextDeleted.includes(c.id));
+      setActiveChannel(remaining[0] || null);
+    }
+
+    showFeedback(lang === 'bn' ? 'চ্যানেল সফলভাবে ডিলিট করা হয়েছে।' : 'Channel deleted successfully.');
+  };
+
+  // Remove custom or provided channel (admin: "rakib" / "rakib")
   const handleDeleteChannel = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(lang === 'bn' ? 'আপনি কি এই চ্যানেলটি ডিলিট করতে চান?' : 'Are you sure you want to delete this channel?')) {
-      const updated = channels.filter(c => c.id !== id);
-      setChannels(updated);
-      
-      const onlyCustom = updated.filter(c => c.isCustom);
-      localStorage.setItem('fwc_iptv_custom_channels', JSON.stringify(onlyCustom));
+    
+    const confirmMsg = lang === 'bn' 
+      ? 'আপনি কি নিশ্চিতভাবে এই চ্যানেলটি ডিলিট করতে চান?' 
+      : 'Are you sure you want to delete this channel?';
+    if (!confirm(confirmMsg)) return;
 
-      if (activeChannel?.id === id) {
-        setActiveChannel(updated[0] || null);
+    if (!isAdminLoggedIn) {
+      setPendingDeleteId(id);
+      setShowAdminLogin(true);
+      setLoginError(null);
+    } else {
+      executeDelete(id);
+    }
+  };
+
+  const handleAdminLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminUsername === 'rakib' && adminPassword === 'rakib') {
+      setIsAdminLoggedIn(true);
+      localStorage.setItem('fwc_iptv_admin_logged_in', 'true');
+      setShowAdminLogin(false);
+      setAdminUsername('');
+      setAdminPassword('');
+      setLoginError(null);
+
+      if (pendingDeleteId) {
+        executeDelete(pendingDeleteId);
+        setPendingDeleteId(null);
       }
+    } else {
+      setLoginError(lang === 'bn' ? 'ভুল ইউজারনেম অথবা পাসওয়ার্ড!' : 'Incorrect Username or Password!');
     }
   };
 
@@ -560,7 +626,7 @@ export default function App() {
                   </div>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[350px] overflow-y-auto pr-1">
-                    {channels.filter(c => !c.isCustom).map((ch) => (
+                    {channels.filter(c => !c.isCustom && !deletedChannelIds.includes(c.id)).map((ch) => (
                       <div
                         key={ch.id}
                         onClick={() => setActiveChannel(ch)}
@@ -589,7 +655,16 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-                        <Play className={`w-4 h-4 ${activeChannel?.id === ch.id ? 'text-amber-400 animate-pulse fill-amber-400' : 'text-slate-500'}`} />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={(e) => handleDeleteChannel(ch.id, e)}
+                            className="p-1.5 text-slate-500 hover:text-red-400 transition hover:bg-white/5 rounded"
+                            title={lang === 'bn' ? 'চ্যানেল ডিলিট করুন' : 'Delete Channel'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <Play className={`w-4 h-4 ${activeChannel?.id === ch.id ? 'text-amber-400 animate-pulse fill-amber-400' : 'text-slate-500'}`} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -693,13 +768,13 @@ export default function App() {
                       {lang === 'bn' ? 'আপনার সংরক্ষিত কাস্টম চ্যানেল সমূহ:' : 'Your Saved Custom Channels:'}
                     </h4>
                     
-                    {channels.filter(c => c.isCustom).length === 0 ? (
+                    {channels.filter(c => c.isCustom && !deletedChannelIds.includes(c.id)).length === 0 ? (
                       <div className="p-4 bg-black/20 rounded border border-white/5 text-center text-xs text-slate-500">
                         {lang === 'bn' ? 'কোন কাস্টম চ্যানেল এখনও সংরক্ষিত নেই।' : 'No custom channels added yet.'}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[150px] overflow-y-auto">
-                        {channels.filter(c => c.isCustom).map((ch) => (
+                        {channels.filter(c => c.isCustom && !deletedChannelIds.includes(c.id)).map((ch) => (
                           <div
                             key={ch.id}
                             onClick={() => setActiveChannel(ch)}
@@ -828,7 +903,7 @@ export default function App() {
                       <span className="text-slate-300">
                         {lang === 'bn'
                           ? 'কিছু ভালো স্ট্রিম লিংক এখনও পুরাতন HTTP সিস্টেমে কাজ করে অথচ এই সাইটটি সুরক্ষিত HTTPS ব্রাউজারে চলেছে। আপনি চাইলে আপনার ব্রাউজারের সার্চ বারের সর্ববামে "Site Settings" এ গিয়ে "Insecure Content" অপশনটি "Allow" করে দিলে HTTP চ্যানেলগুলো সাথে সাথে চালু হয়ে যাবে।'
-                          : 'As some channels use HTTP, some secure HTTPS browsers blocks them. Simply go to browser Site Settings left of URL bar -> navigate to "Insecure Content" -> change to "Allow" to view block streams instantly.'}
+                          : 'As some channels use HTTP, some secure HTTPS browsers block them. Simply go to your browser "Site Settings" (by clicking lock icon left of URL) -> navigate to "Insecure Content" -> change to "Allow" to view these streams instantly.'}
                       </span>
                     </div>
 
@@ -838,8 +913,8 @@ export default function App() {
                       </span>
                       <span className="text-slate-300">
                         {lang === 'bn'
-                          ? 'ইউজার এন্ডে থাকা অতি-আক্রমনাত্মক এডব্লকারগুলো অনেক সময়ে চ্যানলের CDN কানেকশন ভুলবশত ব্লক করে রাখে। লোড টাইম কম করতে এডব্লকার অফ করে চেক করুন।'
-                          : 'Over-active pop-up blockers & network filters may block TS segments. Safely whitelist or pause extension during matches.'}
+                          ? 'ইউজার এন্ডে থাকা অতি-আকর্ষণীয় এডব্লকারগুলো অনেক সময়ে চ্যানেলের CDN কানেকশন ভুলবশত ব্লক করে রাখে। স্পিড বাড়াতে এডব্লকার সাময়িকভাবে অফ করে চেক করুন।'
+                          : 'Over-active pop-up blockers & network filters may block video segments. Safely whitelist or pause extension during matches.'}
                       </span>
                     </div>
                   </div>
@@ -852,7 +927,7 @@ export default function App() {
 
         </div>
 
-        {/* RIGHT COLUMN: Interactive Sidebar (Spans 5cols on large) */}
+        {/* RIGHT COLUMN: Interactive Sidebar (Spans 5cols on large, ordered: Live Broadcasters top, Watchers Hub bottom) */}
         <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
           
           {/* Quick Stats overview panel */}
@@ -967,18 +1042,17 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Delete buttons for custom channels right in list */}
-                      {chan.isCustom ? (
+                      {/* Delete button and play icon aligned nicely */}
+                      <div className="flex items-center gap-1.5 z-10">
                         <button
                           onClick={(e) => handleDeleteChannel(chan.id, e)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 bg-red-950/80 border border-red-500/20 hover:border-red-500 rounded text-red-400 hover:text-white transition"
+                          className="opacity-0 group-hover:opacity-100 p-1 bg-red-950/80 border border-red-500/20 hover:border-red-500 rounded text-red-400 hover:text-white transition"
                           title="Delete channel"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      ) : (
                         <Play className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
-                      )}
+                      </div>
 
                     </div>
                   );
@@ -992,6 +1066,8 @@ export default function App() {
                 onClick={() => {
                   if (confirm(lang === 'bn' ? 'আপনি কি সব কাস্টম সেটিংস রিসেট করে ডিফল্ট চ্যানেলে ফিরে যেতে চান?' : 'Do you want to reset and restore default preset channels?')) {
                     localStorage.removeItem('fwc_iptv_custom_channels');
+                    localStorage.removeItem('fwc_iptv_deleted_channel_ids');
+                    setDeletedChannelIds([]);
                     setChannels(DEFAULT_CHANNELS);
                     setActiveChannel(DEFAULT_CHANNELS[0]);
                     showFeedback(lang === 'bn' ? 'রিসেট সম্পন্ন!' : 'Reset successful!');
@@ -1032,6 +1108,18 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4 shrink-0 justify-center">
+            {isAdminLoggedIn && (
+              <button
+                onClick={() => {
+                  setIsAdminLoggedIn(false);
+                  localStorage.removeItem('fwc_iptv_admin_logged_in');
+                  showFeedback(lang === 'bn' ? 'অ্যাডমিন লগআউট সফল!' : 'Admin logged out!');
+                }}
+                className="text-[10px] bg-red-950/40 border border-red-500/20 px-2 py-1 rounded text-red-400 hover:bg-red-900/40 transition cursor-pointer font-bold"
+              >
+                {lang === 'bn' ? 'অ্যাডমিন লগআউট' : 'Admin Logout'}
+              </button>
+            )}
             <span className="flex items-center gap-1 font-bold text-amber-400">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
               {lang === 'bn' ? 'গতি অপ্টিমাইজড' : 'Latency Optimized'}
@@ -1041,6 +1129,86 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* ADMIN LOGIN MODAL */}
+      <AnimatePresence>
+        {showAdminLogin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#0f172a] border border-white/10 p-5 rounded-2xl max-w-sm w-full shadow-2xl relative text-left"
+            >
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5 text-amber-400">
+                <Settings className="w-4 h-4" />
+                {lang === 'bn' ? 'অ্যাডমিন ভেরিফিকেশন' : 'Admin Verification'}
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">
+                {lang === 'bn' 
+                  ? 'চ্যানেল ডিলিট করার জন্য দয়া করে অ্যাডমিন ক্রেডেনশিয়াল প্রবেশ করান।' 
+                  : 'Please log in with admin privileges to delete channels.'}
+              </p>
+
+              <form onSubmit={handleAdminLoginSubmit} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    {lang === 'bn' ? 'ইউজারনেম' : 'Username'}
+                  </label>
+                  <input
+                    type="text"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    className="bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+                    placeholder="e.g. rakib"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    {lang === 'bn' ? 'পাসওয়ার্ড' : 'Password'}
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+
+                {loginError && (
+                  <p className="text-[10px] text-red-400 font-bold">{loginError}</p>
+                )}
+
+                <div className="flex items-center justify-end gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminLogin(false);
+                      setAdminUsername('');
+                      setAdminPassword('');
+                      setPendingDeleteId(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs text-slate-400 hover:text-white transition cursor-pointer"
+                  >
+                    {lang === 'bn' ? 'বাতিল' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-lg transition cursor-pointer"
+                  >
+                    {lang === 'bn' ? 'লগইন ও ডিলিট' : 'Verify & Delete'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
